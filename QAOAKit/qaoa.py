@@ -1,26 +1,16 @@
-# QAOA circuit for MAXCUT
+# QAOA circuits
 
 import networkx as nx
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 from qiskit.compiler import transpile
 import numpy as np
+import math
 
 
 def append_zz_term(qc, q1, q2, gamma):
     qc.cx(q1, q2)
     qc.rz(2 * gamma, q2)
     qc.cx(q1, q2)
-
-
-def get_maxcut_cost_operator_circuit(G, gamma):
-    N = G.number_of_nodes()
-    qc = QuantumCircuit(N)
-    for i, j in G.edges():
-        if nx.is_weighted(G):
-            append_zz_term(qc, i, j, gamma * G[i][j]["weight"])
-        else:
-            append_zz_term(qc, i, j, gamma)
-    return qc
 
 
 def append_x_term(qc, q1, beta):
@@ -34,6 +24,32 @@ def get_mixer_operator_circuit(G, beta):
     qc = QuantumCircuit(N)
     for n in G.nodes():
         append_x_term(qc, n, beta)
+    return qc
+
+
+def get_maxcut_cost_operator_circuit(G, gamma):
+    N = G.number_of_nodes()
+    qc = QuantumCircuit(N)
+    for i, j in G.edges():
+        if nx.is_weighted(G):
+            append_zz_term(qc, i, j, gamma * G[i][j]["weight"])
+        else:
+            append_zz_term(qc, i, j, gamma)
+    return qc
+
+
+def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
+    if encoding == "onehot":
+        N = G.number_of_nodes()
+        if not nx.is_weighted(G):
+            raise ValueError("Provided graph is not weighted")
+        qc = QuantumCircuit(N**2)
+        for n in G.nodes():
+            for i in range(N):
+                for j in range(N): #road from i'th to j'th city
+                    q1 = (n*N + i) % (N**2)
+                    q2 = ((n+1)*N + i) % (N**2)
+                    append_zz_term(qc, q1, q2, gamma * G[i][j]["weight"]) #does this work if i,j not connected?
     return qc
 
 
