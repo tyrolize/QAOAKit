@@ -19,6 +19,56 @@ def append_x_term(qc, q1, beta):
     qc.h(q1)
 
 
+def append_zzzz_term(qc, q1, q2, q3, q4, gamma):
+    qc.cx(q1,q2)
+    qc.cx(q2,q3)
+    qc.cx(q3,q4)
+    qc.rz(2 * gamma, q4)
+    qc.cx(q3,q4)
+    qc.cx(q2,q3)
+    qc.cx(q1,q2)
+
+
+def append_4_pauli_exponential_term(qc, q1, q2, q3, q4, gamma, pauli="zzzz"):
+    allowed_symbols = set("xyz")
+    if set(pauli).issubset(allowed_symbols) and len(pauli) == 4:
+        if s[0] == "x":
+            qc.h(q1)
+        elif s[0] == "y":
+            qc.y(q1)
+        if s[1] == "x":
+            qc.h(q2)
+        elif s[1] == "y":
+            qc.y(q2)
+        if s[2] == "x":
+            qc.h(q3)
+        elif s[2] == "y":
+            qc.y(q3)
+        if s[3] == "x":
+            qc.h(q4)
+        elif s[3] == "y":
+            qc.y(q4)
+        append_zzzz_term(qc, q1, q2, q3, q4, gamma)
+        if s[0] == "x":
+            qc.h(q1)
+        elif s[0] == "y":
+            qc.y(q1)
+        if s[1] == "x":
+            qc.h(q2)
+        elif s[1] == "y":
+            qc.y(q2)
+        if s[2] == "x":
+            qc.h(q3)
+        elif s[2] == "y":
+            qc.y(q3)
+        if s[3] == "x":
+            qc.h(q4)
+        elif s[3] == "y":
+            qc.y(q4)
+    else:
+        raise ValueError("Not a valid Pauli gate")
+
+
 def get_mixer_operator_circuit(G, beta):
     N = G.number_of_nodes()
     qc = QuantumCircuit(N)
@@ -39,18 +89,70 @@ def get_maxcut_cost_operator_circuit(G, gamma):
 
 
 def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
+    """
+    Generates a circuit for the TSP phase unitary.
+
+    Parameters
+    ----------
+    G : networkx.Graph
+        Graph to solve MaxCut on
+    gamma :
+        QAOA parameter gamma
+    encoding : string, default "onehot"
+        Type of encoding for the city ordering
+
+    Returns
+    -------
+    qc : qiskit.QuantumCircuit
+        Quantum circuit implementing the TSP phase unitary
+    """
     if encoding == "onehot":
         N = G.number_of_nodes()
         if not nx.is_weighted(G):
             raise ValueError("Provided graph is not weighted")
         qc = QuantumCircuit(N**2)
-        for n in G.nodes():
-            for i in range(N):
-                for j in range(N): #road from i'th to j'th city
-                    q1 = (n*N + i) % (N**2)
-                    q2 = ((n+1)*N + i) % (N**2)
-                    append_zz_term(qc, q1, q2, gamma * G[i][j]["weight"]) #does this work if i,j not connected?
-    return qc
+        for n in range(N): # cycle over all cities in the input ordering
+            for u in range(N):
+                for v in range(N): #road from city v to city u
+                    q1 = (n*N + u) % (N**2)
+                    q2 = ((n+1)*N + v) % (N**2)
+                    qc.rzz(qc, q1, q2, gamma * G[u][v]["weight"]) #does this work if i,j not connected?
+        return qc
+
+
+def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, encoding="onehot"):
+    """
+    Generates an ordering swap partial mixer for the TSP mixing unitary.
+
+    Parameters
+    ----------
+    G : networkx.Graph
+        Graph to solve MaxCut on
+    i, j :
+        Positions in the ordering to be swapped
+    u, v :
+        Cities to be swapped
+    encoding : string, default "onehot"
+        Type of encoding for the city ordering
+
+    Returns
+    -------
+    qc : qiskit.QuantumCircuit
+        Quantum circuit implementing the TSP phase unitary
+    """
+    if encoding == "onehot":
+        N = G.number_of_nodes()
+        qc = QuantumCircuit(N**2)
+
+        return qc
+
+
+def get_tsp_mixer_operator_circuit(G, beta, encoding="onehot"):
+    if encoding == "onehot":
+        N = G.number_of_nodes()
+        qc = QuantumCircuit(N**2)
+        
+        return qc
 
 
 def get_maxcut_qaoa_circuit(
