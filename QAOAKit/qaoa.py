@@ -19,54 +19,80 @@ def append_x_term(qc, q1, beta):
     qc.h(q1)
 
 
-def append_zzzz_term(qc, q1, q2, q3, q4, gamma):
+def append_zzzz_term(qc, q1, q2, q3, q4, angle):
     qc.cx(q1,q2)
     qc.cx(q2,q3)
     qc.cx(q3,q4)
-    qc.rz(2 * gamma, q4)
+    qc.rz(2 * angle, q4)
     qc.cx(q3,q4)
     qc.cx(q2,q3)
     qc.cx(q1,q2)
 
 
-def append_4_pauli_exponential_term(qc, q1, q2, q3, q4, gamma, pauli="zzzz"):
+def append_4_pauli_exponential_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
     allowed_symbols = set("xyz")
     if set(pauli).issubset(allowed_symbols) and len(pauli) == 4:
-        if s[0] == "x":
+        if pauli[0] == "x":
             qc.h(q1)
-        elif s[0] == "y":
-            qc.y(q1)
-        if s[1] == "x":
+        elif pauli[0] == "y":
+            qc.rx(-np.pi*.5,q1)
+        if pauli[1] == "x":
             qc.h(q2)
-        elif s[1] == "y":
-            qc.y(q2)
-        if s[2] == "x":
+        elif pauli[1] == "y":
+            qc.rx(-np.pi*.5,q2)
+        if pauli[2] == "x":
             qc.h(q3)
-        elif s[2] == "y":
-            qc.y(q3)
-        if s[3] == "x":
+        elif pauli[2] == "y":
+            qc.rx(-np.pi*.5,q3)
+        if pauli[3] == "x":
             qc.h(q4)
-        elif s[3] == "y":
-            qc.y(q4)
-        append_zzzz_term(qc, q1, q2, q3, q4, gamma)
-        if s[0] == "x":
+        elif pauli[3] == "y":
+            qc.rx(-np.pi*.5,q4)
+        append_zzzz_term(qc, q1, q2, q3, q4, beta)
+        if pauli[0] == "x":
             qc.h(q1)
-        elif s[0] == "y":
-            qc.y(q1)
-        if s[1] == "x":
+        elif pauli[0] == "y":
+            qc.rx(-np.pi*.5,q1)
+        if pauli[1] == "x":
             qc.h(q2)
-        elif s[1] == "y":
-            qc.y(q2)
-        if s[2] == "x":
+        elif pauli[1] == "y":
+            qc.rx(-np.pi*.5,q2)
+        if pauli[2] == "x":
             qc.h(q3)
-        elif s[2] == "y":
-            qc.y(q3)
-        if s[3] == "x":
+        elif pauli[2] == "y":
+            qc.rx(-np.pi*.5,q3)
+        if pauli[3] == "x":
             qc.h(q4)
-        elif s[3] == "y":
-            qc.y(q4)
+        elif pauli[3] == "y":
+            qc.rx(-np.pi*.5,q4)
     else:
-        raise ValueError("Not a valid Pauli gate")
+        raise ValueError("Not a valid Pauli gate or wrong locality")
+
+
+def append_z_to_n_qubits_term(qc, ql, angle):
+    for i in range(len(ql)-1):
+        qc.cx(ql[i],ql[i+1])
+    qc.rz(2 * angle, ql[-1])
+    for i in range(len(ql)-1):
+        qc.cx(ql[len(ql)-2+i],ql[len(ql)-1+i])
+
+
+def append_pauli_exponential_to_n_qubits_term(qc, ql, beta, pauli):
+    allowed_symbols = set("xyz")
+    if set(pauli).issubset(allowed_symbols) and len(pauli) == len(ql):
+        for i in range(len(ql)-1):
+            if pauli[0] == "x":
+                qc.h(ql[i])
+            elif pauli[0] == "y":
+                qc.rx(-np.pi*.5, ql[i])
+        qc.rz(2 * beta, ql[-1])
+        for i in range(len(ql)-1):
+            if pauli[0] == "x":
+                qc.h(ql[i])
+            elif pauli[0] == "y":
+                qc.rx(-np.pi*.5, ql[i])
+    else:
+        raise ValueError("Not a valid Pauli gate or wrong locality")
 
 
 def get_mixer_operator_circuit(G, beta):
@@ -114,13 +140,13 @@ def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
         for n in range(N): # cycle over all cities in the input ordering
             for u in range(N):
                 for v in range(N): #road from city v to city u
-                    q1 = (n*N + u) % (N**2)
-                    q2 = ((n+1)*N + v) % (N**2)
+                    q1 = (n*N + u - 1) % (N**2)
+                    q2 = ((n+1)*N + v - 1) % (N**2)
                     qc.rzz(qc, q1, q2, gamma * G[u][v]["weight"]) #does this work if i,j not connected?
         return qc
 
 
-def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, encoding="onehot"):
+def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, encoding="onehot"):
     """
     Generates an ordering swap partial mixer for the TSP mixing unitary.
 
@@ -143,7 +169,11 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, encoding="onehot"):
     if encoding == "onehot":
         N = G.number_of_nodes()
         qc = QuantumCircuit(N**2)
-
+        qui = (N*i + u - 1) % (N**2)
+        qvj = (N*j + v - 1) % (N**2)
+        quj = (N*j + u - 1) % (N**2)
+        qvi = (N*i + v - 1) % (N**2)
+        append_4_pauli_exponential_term(qc, qui, qvj, quj, qvi, beta, "xxxx")
         return qc
 
 
