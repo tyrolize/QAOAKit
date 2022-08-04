@@ -29,7 +29,7 @@ def append_zzzz_term(qc, q1, q2, q3, q4, angle):
     qc.cx(q1,q2)
 
 
-def append_4_pauli_exponential_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
+def append_4_qubit_pauli_rotation_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
     allowed_symbols = set("xyz")
     if set(pauli).issubset(allowed_symbols) and len(pauli) == 4:
         if pauli[0] == "x":
@@ -69,7 +69,7 @@ def append_4_pauli_exponential_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
         raise ValueError("Not a valid Pauli gate or wrong locality")
 
 
-def append_z_to_n_qubits_term(qc, ql, angle):
+def append_n_qubit_z_term(qc, ql, angle):
     for i in range(len(ql)-1):
         qc.cx(ql[i],ql[i+1])
     qc.rz(2 * angle, ql[-1])
@@ -77,7 +77,7 @@ def append_z_to_n_qubits_term(qc, ql, angle):
         qc.cx(ql[len(ql)-2+i],ql[len(ql)-1+i])
 
 
-def append_pauli_exponential_to_n_qubits_term(qc, ql, beta, pauli):
+def append_n_qubit_pauli_rotation_term(qc, ql, beta, pauli):
     allowed_symbols = set("xyz")
     if set(pauli).issubset(allowed_symbols) and len(pauli) == len(ql):
         for i in range(len(ql)-1):
@@ -146,7 +146,7 @@ def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
         return qc
 
 
-def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, encoding="onehot"):
+def get_ordering_swap_partial_mixing_term(G, i, j, u, v, beta, T, encoding="onehot"):
     """
     Generates an ordering swap partial mixer for the TSP mixing unitary.
 
@@ -158,6 +158,10 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, encoding="oneh
         Positions in the ordering to be swapped
     u, v :
         Cities to be swapped
+    beta :
+        QAOA angle
+    T :
+        Number of Trotter steps
     encoding : string, default "onehot"
         Type of encoding for the city ordering
 
@@ -168,13 +172,27 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, encoding="oneh
     """
     if encoding == "onehot":
         N = G.number_of_nodes()
+        dt = beta/T
         qc = QuantumCircuit(N**2)
         qui = (N*i + u - 1) % (N**2)
         qvj = (N*j + v - 1) % (N**2)
         quj = (N*j + u - 1) % (N**2)
         qvi = (N*i + v - 1) % (N**2)
-        append_4_pauli_exponential_term(qc, qui, qvj, quj, qvi, beta, "xxxx")
+        for i in range(T):
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xxxx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -2*dt, "xxyy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xyxy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xyyx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yxxy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yxyx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -2*dt, "yyxx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yyyy")
         return qc
+
+
+def get_color_parity_ordering_swap_mixer_term(G, beta, encoding="onehot"):
+    
+    pass
 
 
 def get_tsp_mixer_operator_circuit(G, beta, encoding="onehot"):
