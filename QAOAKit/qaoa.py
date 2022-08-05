@@ -4,7 +4,6 @@ import networkx as nx
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 from qiskit.compiler import transpile
 import numpy as np
-import math
 
 
 def append_zz_term(qc, q1, q2, gamma):
@@ -114,16 +113,18 @@ def get_maxcut_cost_operator_circuit(G, gamma):
     return qc
 
 
-def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
+def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
     """
-    Generates a circuit for the TSP phase unitary.
+    Generates a circuit for the TSP phase unitary with optional penalty.
 
     Parameters
     ----------
     G : networkx.Graph
-        Graph to solve MaxCut on
+        Graph to solve TSP on
     gamma :
         QAOA parameter gamma
+    pen :
+        Penalty for edges with no roads
     encoding : string, default "onehot"
         Type of encoding for the city ordering
 
@@ -142,7 +143,10 @@ def get_tsp_cost_operator_circuit(G, gamma, encoding="onehot"):
                 for v in range(N): #road from city v to city u
                     q1 = (n*N + u - 1) % (N**2)
                     q2 = ((n+1)*N + v - 1) % (N**2)
-                    qc.rzz(qc, q1, q2, gamma * G[u][v]["weight"]) #does this work if i,j not connected?
+                    if G.has_edge(u, v):
+                        qc.rzz(qc, q1, q2, gamma * G[u][v]["weight"])
+                    else:
+                        qc.rzz(qc, q1, q2, gamma * pen)
         return qc
 
 
@@ -153,7 +157,7 @@ def get_ordering_swap_partial_mixing_term(G, i, j, u, v, beta, T, encoding="oneh
     Parameters
     ----------
     G : networkx.Graph
-        Graph to solve MaxCut on
+        Graph to solve TSP on
     i, j :
         Positions in the ordering to be swapped
     u, v :
@@ -206,7 +210,8 @@ def get_tsp_mixer_operator_circuit(G, beta, encoding="onehot"):
 def get_maxcut_qaoa_circuit(
     G, beta, gamma, transpile_to_basis=True, save_state=True, qr=None, cr=None
 ):
-    """Generates a circuit for weighted MaxCut on graph G.
+    """
+    Generates a circuit for weighted MaxCut on graph G.
 
     Parameters
     ----------
