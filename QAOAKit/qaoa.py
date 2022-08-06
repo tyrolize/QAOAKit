@@ -4,6 +4,7 @@ import networkx as nx
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 from qiskit.compiler import transpile
 import numpy as np
+from utils import misra_gries_edge_coloring
 
 
 def append_zz_term(qc, q1, q2, gamma):
@@ -194,16 +195,29 @@ def get_ordering_swap_partial_mixing_term(G, i, j, u, v, beta, T, encoding="oneh
         return qc
 
 
-def get_color_parity_ordering_swap_mixer_term(G, beta, encoding="onehot"):
-    
-    pass
-
-
-def get_tsp_mixer_operator_circuit(G, beta, encoding="onehot"):
+def get_color_parity_ordering_swap_mixer_circuit(G, beta, T, encoding="onehot"):
     if encoding == "onehot":
         N = G.number_of_nodes()
+        dt = beta/T
         qc = QuantumCircuit(N**2)
-        
+        misra_gries_edge_coloring(G)
+        colors = nx.get_edge_attributes(G, "misra_gries_color")
+        for c in colors:
+            for i in range(0,N-1,2):
+                for u, v in G.edges:
+                    if G[u][v]["misra_gries_color"] == c:
+                        qc.append(get_ordering_swap_partial_mixing_term(
+                            G, i, i+1, u, v, beta, T, encoding="onehot"))
+            for i in range(1,N-1,2):
+                for u, v in G.edges:
+                    if G[u][v]["misra_gries_color"] == c:
+                        qc.append(get_ordering_swap_partial_mixing_term(
+                            G, i, i+1, u, v, beta, T, encoding="onehot"))
+            if N%2 == 1:
+                for u, v in G.edges:
+                    if G[u][v]["misra_gries_color"] == c:
+                        qc.append(get_ordering_swap_partial_mixing_term(
+                            G, N-1, 0, u, v, beta, T, encoding="onehot"))
         return qc
 
 
