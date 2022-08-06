@@ -4,7 +4,55 @@ import networkx as nx
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 from qiskit.compiler import transpile
 import numpy as np
-from utils import misra_gries_edge_coloring
+from itertools import count as itcount
+
+
+def misra_gries_edge_coloring(G):
+    nx.set_edge_attributes(G, values=None, name="misra_gries_color")
+    uncolored_edges = list(G.edges())
+    while uncolored_edges:
+        u, v = uncolored_edges[0]
+        F = [v] # F is the maximal fan of u
+        for n in G.neighbors(u):
+            if (n!=v and
+                G[n][u]["misra_gries_color"] != None and
+                G[n][u]["misra_gries_color"] not in
+                [G[F[-1]][i]["misra_gries_color"] for i in G.neighbors(F[-1])]):
+                F.append(n)
+        c = next((x) for x in itcount() # c is free on u
+            if (x) not in set([G[u][i]["misra_gries_color"] for i in G.neighbors(u)]))
+        d = next((x) for x in itcount() # d is free on F[k]
+            if (x) not in set([G[F[-1]][i]["misra_gries_color"] for i in G.neighbors(F[-1])]))
+        n = u # current node for the path construction
+        color = d # current color
+        visited_edges = [] # mark visited edges to stop double flipping
+        while True: # invert cd path
+            edge_found = 0
+            for i, j in G.edges(n):
+                if (G[i][j] not in visited_edges and 
+                    G[i][j]["misra_gries_color"] == color):
+                    if color == c:
+                        G[i][j]["misra_gries_color"]=d
+                        color = d
+                    elif color == d:
+                        G[i][j]["misra_gries_color"]=c
+                        color = c
+                    n = j
+                    visited_edges.append(G[i][j])
+                    edge_found = 1
+                    break
+            if edge_found == 0:
+                break
+        for i in range(len(F)): # find w satisfying w in F, [F[1]..w] a fan, d free on w
+            w = F[i]
+            if d not in set([G[w][j]["misra_gries_color"] for j in G.neighbors(w)]):
+                Fw = F[0:i+1]
+                for j in range(len(F)-1): #rotate the fan Fw
+                    G[F[j]][u]["misra_gries_color"] = G[F[j+1]][u]["misra_gries_color"]
+                G[F[-1]][u]["misra_gries_color"] = d
+                break # break after the first w is found and the fan is rotated
+        uncolored_edges.pop(0) # remove the colored edge
+    return G
 
 
 def append_zz_term(qc, q1, q2, gamma):
@@ -145,13 +193,14 @@ def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
                     q1 = (n*N + u - 1) % (N**2)
                     q2 = ((n+1)*N + v - 1) % (N**2)
                     if G.has_edge(u, v):
-                        qc.rzz(qc, q1, q2, gamma * G[u][v]["weight"])
+                        append_zz_term(qc, q1, q2, gamma * G[u][v]["weight"])
                     else:
-                        qc.rzz(qc, q1, q2, gamma * pen)
+                        append_zz_term(qc, q1, q2, gamma * pen)
+                        pass
         return qc
 
 
-def get_ordering_swap_partial_mixing_term(G, i, j, u, v, beta, T, encoding="onehot"):
+def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, T, encoding="onehot"):
     """
     Generates an ordering swap partial mixer for the TSP mixing unitary.
 
@@ -198,26 +247,56 @@ def get_ordering_swap_partial_mixing_term(G, i, j, u, v, beta, T, encoding="oneh
 def get_color_parity_ordering_swap_mixer_circuit(G, beta, T, encoding="onehot"):
     if encoding == "onehot":
         N = G.number_of_nodes()
-        dt = beta/T
         qc = QuantumCircuit(N**2)
-        misra_gries_edge_coloring(G)
+        G = misra_gries_edge_coloring(G)
         colors = nx.get_edge_attributes(G, "misra_gries_color")
         for c in colors:
             for i in range(0,N-1,2):
                 for u, v in G.edges:
                     if G[u][v]["misra_gries_color"] == c:
-                        qc.append(get_ordering_swap_partial_mixing_term(
+                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
                             G, i, i+1, u, v, beta, T, encoding="onehot"))
             for i in range(1,N-1,2):
                 for u, v in G.edges:
                     if G[u][v]["misra_gries_color"] == c:
-                        qc.append(get_ordering_swap_partial_mixing_term(
+                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
                             G, i, i+1, u, v, beta, T, encoding="onehot"))
             if N%2 == 1:
                 for u, v in G.edges:
                     if G[u][v]["misra_gries_color"] == c:
-                        qc.append(get_ordering_swap_partial_mixing_term(
+                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
                             G, N-1, 0, u, v, beta, T, encoding="onehot"))
+        return qc
+
+
+def get_tsp_init_circuit(G, encoding="onehot"):
+    if encoding == "onehot":
+        N = G.number_of_nodes()
+        qc = QuantumCircuit(N**2)
+        for i in range(N):
+            qc.z(i*N+i-1)
+        return qc
+
+
+def get_tsp_qaoa_circuit(
+    G, beta, gamma, T=1, pen=2, transpile_to_basis=True, save_state=True, encoding="onehot"
+):
+    if encoding == "onehot":
+        assert len(beta) == len(gamma)
+        p = len(beta)  # infering number of QAOA steps from the parameters passed
+        N = G.number_of_nodes()
+        qr = QuantumRegister(N**2)
+        qc = QuantumCircuit(qr)
+        # prepare the init state in onehot encoding
+        qc = qc.compose(get_tsp_init_circuit(G, encoding="onehot"))
+        # second, apply p alternating operators
+        for i in range(p):
+            qc = qc.compose(get_tsp_cost_operator_circuit(G, gamma[i], pen, encoding="onehot"))
+            qc = qc.compose(get_color_parity_ordering_swap_mixer_circuit(G, beta[i], T, encoding="onehot"))
+        if transpile_to_basis:
+            qc = transpile(qc, optimization_level=0, basis_gates=["u1", "u2", "u3", "cx"])
+        if save_state:
+            qc.save_state()
         return qc
 
 
