@@ -274,7 +274,7 @@ def get_tsp_init_circuit(G, encoding="onehot"):
         N = G.number_of_nodes()
         qc = QuantumCircuit(N**2)
         for i in range(N):
-            qc.z(i*N+i-1)
+            qc.x(i*N+i-1)
         return qc
 
 
