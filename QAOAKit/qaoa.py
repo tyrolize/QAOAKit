@@ -190,8 +190,8 @@ def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
         for n in range(N): # cycle over all cities in the input ordering
             for u in range(N):
                 for v in range(N): #road from city v to city u
-                    q1 = (n*N + u - 1) % (N**2)
-                    q2 = ((n+1)*N + v - 1) % (N**2)
+                    q1 = (n*N + u) % (N**2)
+                    q2 = ((n+1)*N + v) % (N**2)
                     if G.has_edge(u, v):
                         append_zz_term(qc, q1, q2, gamma * G[u][v]["weight"])
                     else:
@@ -228,10 +228,10 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, T, encoding="o
         N = G.number_of_nodes()
         dt = beta/T
         qc = QuantumCircuit(N**2)
-        qui = (N*i + u - 1) % (N**2)
-        qvj = (N*j + v - 1) % (N**2)
-        quj = (N*j + u - 1) % (N**2)
-        qvi = (N*i + v - 1) % (N**2)
+        qui = (N*i + u) % (N**2)
+        qvj = (N*j + v) % (N**2)
+        quj = (N*j + u) % (N**2)
+        qvi = (N*i + v) % (N**2)
         for i in range(T):
             append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xxxx")
             append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -2*dt, "xxyy")
@@ -250,7 +250,7 @@ def get_color_parity_ordering_swap_mixer_circuit(G, beta, T, encoding="onehot"):
         qc = QuantumCircuit(N**2)
         G = misra_gries_edge_coloring(G)
         colors = nx.get_edge_attributes(G, "misra_gries_color")
-        for c in colors:
+        for c in colors.values():
             for i in range(0,N-1,2):
                 for u, v in G.edges:
                     if G[u][v]["misra_gries_color"] == c:
@@ -274,7 +274,7 @@ def get_tsp_init_circuit(G, encoding="onehot"):
         N = G.number_of_nodes()
         qc = QuantumCircuit(N**2)
         for i in range(N):
-            qc.x(i*N+i-1)
+            qc.x(i*N+i)
         return qc
 
 
