@@ -96,7 +96,7 @@ def append_4_qubit_pauli_rotation_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
             qc.h(q4)
         elif pauli[3] == "y":
             qc.rx(-np.pi*.5,q4)
-        append_zzzz_term(qc, q1, q2, q3, q4, beta)
+        append_zzzz_term(qc, q1, q2, q3, q4, 2 * beta)
         if pauli[0] == "x":
             qc.h(q1)
         elif pauli[0] == "y":
@@ -143,6 +143,15 @@ def append_n_qubit_pauli_rotation_term(qc, ql, beta, pauli):
         raise ValueError("Not a valid Pauli gate or wrong locality")
 
 
+def append_swap_rotation_term(qc, q1, q2, beta):
+    qc.cx(q2,q1)
+    qc.x(q1)
+    qc.crz(2 * beta, q1, q2)
+    qc.x(q1)
+    qc.crx(2 * beta, q1, q2)
+    qc.cx(q2,q1)
+
+
 def get_mixer_operator_circuit(G, beta):
     N = G.number_of_nodes()
     qc = QuantumCircuit(N)
@@ -162,7 +171,8 @@ def get_maxcut_cost_operator_circuit(G, gamma):
     return qc
 
 
-def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
+def get_tsp_cost_operator_circuit(
+    G, gamma, pen, encoding="onehot", structure="controlled z"):
     """
     Generates a circuit for the TSP phase unitary with optional penalty.
 
@@ -182,7 +192,7 @@ def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
     qc : qiskit.QuantumCircuit
         Quantum circuit implementing the TSP phase unitary
     """
-    if encoding == "onehot":
+    if encoding == "onehot" and structure == "zz rotation":
         N = G.number_of_nodes()
         if not nx.is_weighted(G):
             raise ValueError("Provided graph is not weighted")
@@ -196,11 +206,26 @@ def get_tsp_cost_operator_circuit(G, gamma, pen=0, encoding="onehot"):
                         append_zz_term(qc, q1, q2, gamma * G[u][v]["weight"])
                     else:
                         append_zz_term(qc, q1, q2, gamma * pen)
-                        pass
+        return qc
+    if encoding == "onehot" and structure == "controlled z":
+        N = G.number_of_nodes()
+        if not nx.is_weighted(G):
+            raise ValueError("Provided graph is not weighted")
+        qc = QuantumCircuit(N**2)
+        for n in range(N): # cycle over all cities in the input ordering
+            for u in range(N):
+                for v in range(N): #road from city v to city u
+                    q1 = (n*N + u) % (N**2)
+                    q2 = ((n+1)*N + v) % (N**2)
+                    if G.has_edge(u, v):
+                        qc.crz(gamma * G[u][v]["weight"], q1, q2)
+                    else:
+                        qc.crz(gamma * pen, q1, q2)
         return qc
 
 
-def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, T, encoding="onehot"):
+def get_ordering_swap_partial_mixing_circuit(
+    G, i, j, u, v, beta, T, encoding="onehot", structure="pauli rotations"):
     """
     Generates an ordering swap partial mixer for the TSP mixing unitary.
 
@@ -224,7 +249,25 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, T, encoding="o
     qc : qiskit.QuantumCircuit
         Quantum circuit implementing the TSP phase unitary
     """
-    if encoding == "onehot":
+    if encoding == "onehot" and structure == "pauli rotations":
+        N = G.number_of_nodes()
+        dt = beta/T
+        qc = QuantumCircuit(N**2)
+        qui = (N*i + u)
+        qvj = (N*j + v)
+        quj = (N*j + u)
+        qvi = (N*i + v)
+        for t in range(T):
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "xxxx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -dt, "xxyy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "xyxy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "xyyx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "yxxy")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "yxyx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -dt, "yyxx")
+            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, dt, "yyyy")
+        return qc
+    if encoding == "onehot" and structure == "swap rotation":
         N = G.number_of_nodes()
         dt = beta/T
         qc = QuantumCircuit(N**2)
@@ -232,40 +275,52 @@ def get_ordering_swap_partial_mixing_circuit(G, i, j, u, v, beta, T, encoding="o
         qvj = (N*j + v) % (N**2)
         quj = (N*j + u) % (N**2)
         qvi = (N*i + v) % (N**2)
-        for i in range(T):
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xxxx")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -2*dt, "xxyy")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xyxy")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "xyyx")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yxxy")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yxyx")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, -2*dt, "yyxx")
-            append_4_qubit_pauli_rotation_term(qc, qui, qvj, quj, qvi, 2*dt, "yyyy")
+        for t in range(T):
+            append_swap_rotation_term(qc, qui, qvi, beta)
+            append_swap_rotation_term(qc, quj, qvj, beta)
         return qc
 
 
-def get_color_parity_ordering_swap_mixer_circuit(G, beta, T, encoding="onehot"):
+def get_color_parity_ordering_swap_mixer_circuit(G, beta, T1, T2, encoding="onehot"):
     if encoding == "onehot":
         N = G.number_of_nodes()
+        dt = beta/T2
         qc = QuantumCircuit(N**2)
         G = misra_gries_edge_coloring(G)
-        colors = nx.get_edge_attributes(G, "misra_gries_color")
-        for c in colors.values():
-            for i in range(0,N-1,2):
+        colors = nx.get_edge_attributes(G, "misra_gries_color").values()
+        for c in colors:
+            for t in range(T2):
+                for i in range(0,N-1,2):
+                    for u, v in G.edges:
+                        if G[u][v]["misra_gries_color"] == c:
+                            qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
+                                G, i, i+1, u, v, dt, T1, encoding="onehot"))                       
+                for i in range(1,N-1,2):
+                    for u, v in G.edges:
+                        if G[u][v]["misra_gries_color"] == c:
+                            qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
+                                G, i, i+1, u, v, dt, T1, encoding="onehot"))
+                if N%2 == 1:
+                    for u, v in G.edges:
+                        if G[u][v]["misra_gries_color"] == c:
+                            qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
+                                G, N-1, 0, u, v, dt, T1, encoding="onehot"))
+        return qc
+
+
+def get_simultaneous_ordering_swap_mixer(G, beta, T1, T2, encoding="onehot"):
+    if encoding == "onehot":
+        N = G.number_of_nodes()
+        dt = beta/T2
+        qc = QuantumCircuit(N**2)
+        for t in range(T2):
+            for i in range(N-1):
                 for u, v in G.edges:
-                    if G[u][v]["misra_gries_color"] == c:
-                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
-                            G, i, i+1, u, v, beta, T, encoding="onehot"))
-            for i in range(1,N-1,2):
-                for u, v in G.edges:
-                    if G[u][v]["misra_gries_color"] == c:
-                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
-                            G, i, i+1, u, v, beta, T, encoding="onehot"))
-            if N%2 == 1:
-                for u, v in G.edges:
-                    if G[u][v]["misra_gries_color"] == c:
-                        qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
-                            G, N-1, 0, u, v, beta, T, encoding="onehot"))
+                    qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
+                                G, i, i+1, u, v, dt, T1, encoding="onehot"))
+            for u, v in G.edges:
+                qc = qc.compose(get_ordering_swap_partial_mixing_circuit(
+                                G, N-1, 0, u, v, dt, T1, encoding="onehot"))
         return qc
 
 
@@ -279,7 +334,7 @@ def get_tsp_init_circuit(G, encoding="onehot"):
 
 
 def get_tsp_qaoa_circuit(
-    G, beta, gamma, T=1, pen=2, transpile_to_basis=True, save_state=True, encoding="onehot"
+    G, beta, gamma, T1=5, T2=5, pen=2, transpile_to_basis=True, save_state=True, encoding="onehot"
 ):
     if encoding == "onehot":
         assert len(beta) == len(gamma)
@@ -292,7 +347,7 @@ def get_tsp_qaoa_circuit(
         # second, apply p alternating operators
         for i in range(p):
             qc = qc.compose(get_tsp_cost_operator_circuit(G, gamma[i], pen, encoding="onehot"))
-            qc = qc.compose(get_color_parity_ordering_swap_mixer_circuit(G, beta[i], T, encoding="onehot"))
+            qc = qc.compose(get_simultaneous_ordering_swap_mixer(G, beta[i], T1, T2, encoding="onehot"))
         if transpile_to_basis:
             qc = transpile(qc, optimization_level=0, basis_gates=["u1", "u2", "u3", "cx"])
         if save_state:
