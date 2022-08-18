@@ -96,7 +96,7 @@ def append_4_qubit_pauli_rotation_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
             qc.h(q4)
         elif pauli[3] == "y":
             qc.rx(-np.pi*.5,q4)
-        append_zzzz_term(qc, q1, q2, q3, q4, 2 * beta)
+        append_zzzz_term(qc, q1, q2, q3, q4, beta)
         if pauli[0] == "x":
             qc.h(q1)
         elif pauli[0] == "y":
@@ -133,7 +133,7 @@ def append_n_qubit_pauli_rotation_term(qc, ql, beta, pauli):
                 qc.h(ql[i])
             elif pauli[0] == "y":
                 qc.rx(-np.pi*.5, ql[i])
-        qc.rz(2 * beta, ql[-1])
+        append_n_qubit_z_term(qc, ql, beta)
         for i in range(len(ql)-1):
             if pauli[0] == "x":
                 qc.h(ql[i])
@@ -141,6 +141,10 @@ def append_n_qubit_pauli_rotation_term(qc, ql, beta, pauli):
                 qc.rx(-np.pi*.5, ql[i])
     else:
         raise ValueError("Not a valid Pauli gate or wrong locality")
+
+
+def append_3control_toffoli_x(qc, qtarget, qcontrols):
+    pass
 
 
 def append_swap_rotation_term(qc, q1, q2, beta):
@@ -275,7 +279,7 @@ def get_ordering_swap_partial_mixing_circuit(
         qvj = (N*j + v) % (N**2)
         quj = (N*j + u) % (N**2)
         qvi = (N*i + v) % (N**2)
-        for t in range(T):
+        for t in range(T): # this is not correct, implement control with ancilla?
             append_swap_rotation_term(qc, qui, qvi, beta)
             append_swap_rotation_term(qc, quj, qvj, beta)
         return qc
