@@ -5,6 +5,7 @@ from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, exec
 from qiskit.compiler import transpile
 import numpy as np
 from itertools import count as itcount
+import math
 
 
 def misra_gries_edge_coloring(G):
@@ -68,13 +69,13 @@ def append_x_term(qc, q1, beta):
 
 
 def append_zzzz_term(qc, q1, q2, q3, q4, angle):
-    qc.cx(q1,q2)
-    qc.cx(q2,q3)
+    qc.cx(q1,q4)
+    qc.cx(q2,q4)
     qc.cx(q3,q4)
     qc.rz(2 * angle, q4)
     qc.cx(q3,q4)
-    qc.cx(q2,q3)
-    qc.cx(q1,q2)
+    qc.cx(q2,q4)
+    qc.cx(q1,q4)
 
 
 def append_4_qubit_pauli_rotation_term(qc, q1, q2, q3, q4, beta, pauli="zzzz"):
@@ -416,3 +417,100 @@ def get_maxcut_qaoa_circuit(
     if save_state:
         qc.save_state()
     return qc
+
+
+def is_valid_path(s, N): # pafloxy
+    if len(s) != N**2 or s.count('1') != N:
+        return False
+    rep_matrix = np.zeros((N,N), dtype=int)
+    for index, val in enumerate(s) :
+        if val== '1':
+            u = index % N
+            i = math.floor(index/N)
+            rep_matrix[i, u] = 1
+    if not np.abs(np.linalg.det(rep_matrix)) == 1:
+        return False
+    return True
+
+
+def solution_string_to_list(s, N):
+    #assert is_valid_path(s, N)
+    l = []
+    for i in range(N):
+        for j in range(N):
+            c = i*N+j
+            if int(s[c]) == 1:
+                l.append(j)
+    return l
+
+
+def get_tsp_cost(s, G, pen):
+    N = G.number_of_nodes()
+    assert len(s) == N**2
+    if is_valid_path(s, N):
+        cost = 0
+        l = solution_string_to_list(s, N)
+        for i in range(N):
+            u = l[i]
+            v = l[(i+1) % (N-1)]
+            cost += G[u][v]['weight']
+        return cost
+    else:
+        return pen
+
+
+def compute_tsp_cost_expectation(counts, G, pen):
+    
+    """
+    Computes expectation value of cost based on measurement results
+    
+    Args:
+        counts: dict
+                key as bitstring, val as count
+           
+        G: networkx graph
+
+        pen: penalty for wrong formatted paths
+        
+    Returns:
+        avg: float
+             expectation value
+    """
+    
+    avg = 0
+    sum_count = 0
+    for bitstring, count in counts.items():
+        
+        obj = get_tsp_cost(bitstring, G, pen)
+        avg += obj * count
+        sum_count += count
+        
+    return avg/sum_count
+
+
+def get_tsp_expectation_value(G, pen=100):
+    
+    """
+    Runs parametrized circuit
+    
+    Args:
+        G: networkx graph
+        p: int,
+           Number of repetitions of unitaries
+        pen: penalty for wrong formatted paths
+    """
+    
+    backend = Aer.get_backend('qasm_simulator')
+    
+    def execute_circ(angles):
+        n = len(angles)
+        assert n%2 == 0
+        beta = angles[0:int(n/2)]
+        gamma = angles[int(n/2):n]
+        qc = get_tsp_qaoa_circuit(G, beta, gamma)
+        qc.measure_all()
+        counts = backend.run(qc).result().get_counts()
+        
+        return compute_tsp_cost_expectation(counts, G, pen)
+    
+    return execute_circ
