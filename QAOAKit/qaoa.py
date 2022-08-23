@@ -3,9 +3,11 @@
 import networkx as nx
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 from qiskit.compiler import transpile
+from qiskit.providers.aer import AerSimulator
 import numpy as np
 from itertools import count as itcount
 import math
+from scipy.optimize import minimize
 
 
 def misra_gries_edge_coloring(G):
@@ -488,7 +490,7 @@ def compute_tsp_cost_expectation(counts, G, pen):
     return avg/sum_count
 
 
-def get_tsp_expectation_value(G, pen=100):
+def get_tsp_expectation_value(G, pen):
     
     """
     Runs parametrized circuit
@@ -500,7 +502,8 @@ def get_tsp_expectation_value(G, pen=100):
         pen: penalty for wrong formatted paths
     """
     
-    backend = Aer.get_backend('qasm_simulator')
+    #backend = Aer.get_backend('qasm_simulator')
+    aersim = AerSimulator(device="CPU")
     
     def execute_circ(angles):
         n = len(angles)
@@ -509,8 +512,15 @@ def get_tsp_expectation_value(G, pen=100):
         gamma = angles[int(n/2):n]
         qc = get_tsp_qaoa_circuit(G, beta, gamma)
         qc.measure_all()
-        counts = backend.run(qc).result().get_counts()
+        #counts = backend.run(qc).result().get_counts()
+        counts = execute(qc, aersim).result().get_counts()
         
         return compute_tsp_cost_expectation(counts, G, pen)
     
     return execute_circ
+
+
+def get_optimized_angles(G, x0, pen, method='COBYLA'):
+    E = get_tsp_expectation_value(G, pen)
+    res = minimize(E, x0, method=method)
+    return res
